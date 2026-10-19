@@ -191,8 +191,8 @@ async def test_tenants_detail_resolves_main_domain_prefix(monkeypatch):
                 200,
                 json={
                     "data": [
-                        {"id": "1", "type": "tenant", "attributes": {"domainPrefix": "acme", "tenantType": "multiClient"}},
-                        {"id": "2", "type": "tenant", "attributes": {"domainPrefix": "acme-client", "tenantType": "client"}},
+                        {"id": "1", "type": "tenant", "attributes": {"domainPrefix": "example", "tenantType": "multiClient"}},
+                        {"id": "2", "type": "tenant", "attributes": {"domainPrefix": "example-client", "tenantType": "client"}},
                     ]
                 },
             )
@@ -208,5 +208,5 @@ async def test_tenants_detail_resolves_main_domain_prefix(monkeypatch):
     finally:
         _credentials_var.reset(token)
     assert seen[-1].path == "/v1/tenants/detail/2"
-    assert seen[-1].params["tenantDomainPrefix"] == "acme"
+    assert seen[-1].params["tenantDomainPrefix"] == "example"
     assert json.loads(content[0].text) == {"id": "2", "type": "tenantDetail", "available": True}

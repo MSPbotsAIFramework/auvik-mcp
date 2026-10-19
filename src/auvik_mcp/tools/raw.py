@@ -54,7 +54,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     ) -> str:
         """Call any documented Auvik API endpoint not covered by the other tools; returns the raw JSON.
 
-        Prefer the typed tools. Use GET unless the user asked for a change.
+        Prefer the typed tools. Use GET; send other methods only when the user explicitly asks for that change.
         """
 
         async def action(client: AuvikClient) -> Any:
