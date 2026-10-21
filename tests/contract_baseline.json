@@ -1,0 +1,530 @@
+{
+  "int_baseline": {
+    "auvik_alerts_dismiss": {
+      "params": [
+        "alertId",
+        "tenants"
+      ],
+      "required": [
+        "alertId"
+      ]
+    },
+    "auvik_alerts_get": {
+      "params": [
+        "alertId",
+        "tenants"
+      ],
+      "required": [
+        "alertId"
+      ]
+    },
+    "auvik_alerts_list": {
+      "params": [
+        "filter_detectedTimeAfter",
+        "filter_detectedTimeBefore",
+        "filter_status",
+        "filter_severity",
+        "sort",
+        "pageSize",
+        "pageAfter",
+        "tenants"
+      ],
+      "required": []
+    },
+    "auvik_billing_client_usage": {
+      "params": [
+        "fromDate",
+        "thruDate",
+        "tenants"
+      ],
+      "required": [
+        "fromDate",
+        "thruDate"
+      ]
+    },
+    "auvik_billing_device_usage": {
+      "params": [
+        "deviceId",
+        "fromDate",
+        "thruDate",
+        "tenants"
+      ],
+      "required": [
+        "deviceId",
+        "fromDate",
+        "thruDate"
+      ]
+    },
+    "auvik_configurations_get": {
+      "params": [
+        "configId",
+        "tenants"
+      ],
+      "required": [
+        "configId"
+      ]
+    },
+    "auvik_configurations_list": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_devices"
+      ],
+      "required": []
+    },
+    "auvik_devices_get": {
+      "params": [
+        "deviceId",
+        "tenants"
+      ],
+      "required": [
+        "deviceId"
+      ]
+    },
+    "auvik_devices_get_details": {
+      "params": [
+        "deviceId",
+        "tenants"
+      ],
+      "required": [
+        "deviceId"
+      ]
+    },
+    "auvik_devices_get_lifecycle": {
+      "params": [
+        "deviceId",
+        "tenants"
+      ],
+      "required": [
+        "deviceId"
+      ]
+    },
+    "auvik_devices_get_warranty": {
+      "params": [
+        "deviceId",
+        "tenants"
+      ],
+      "required": [
+        "deviceId"
+      ]
+    },
+    "auvik_devices_list": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_deviceType",
+        "filter_modifiedAfter",
+        "filter_vendorName",
+        "filter_onlineStatus"
+      ],
+      "required": []
+    },
+    "auvik_entities_list_audits": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_entityId"
+      ],
+      "required": []
+    },
+    "auvik_entities_list_notes": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_entityId"
+      ],
+      "required": []
+    },
+    "auvik_interfaces_list": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_parentDevice",
+        "filter_interfaceType"
+      ],
+      "required": []
+    },
+    "auvik_navigate": {
+      "params": [],
+      "required": []
+    },
+    "auvik_networks_get": {
+      "params": [
+        "networkId",
+        "tenants"
+      ],
+      "required": [
+        "networkId"
+      ]
+    },
+    "auvik_networks_list": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_networkType",
+        "filter_modifiedAfter"
+      ],
+      "required": []
+    },
+    "auvik_raw_request": {
+      "params": [
+        "method",
+        "path",
+        "query",
+        "body"
+      ],
+      "required": [
+        "path"
+      ]
+    },
+    "auvik_statistics_device": {
+      "params": [
+        "statId",
+        "fromTime",
+        "interval",
+        "thruTime",
+        "filter_devices",
+        "tenants"
+      ],
+      "required": [
+        "statId",
+        "fromTime",
+        "interval"
+      ]
+    },
+    "auvik_statistics_interface": {
+      "params": [
+        "statId",
+        "fromTime",
+        "interval",
+        "thruTime",
+        "filter_interfaces",
+        "tenants"
+      ],
+      "required": [
+        "statId",
+        "fromTime",
+        "interval"
+      ]
+    },
+    "auvik_statistics_service": {
+      "params": [
+        "statId",
+        "fromTime",
+        "interval",
+        "thruTime",
+        "filter_services",
+        "tenants"
+      ],
+      "required": [
+        "statId",
+        "fromTime",
+        "interval"
+      ]
+    },
+    "auvik_statistics_snmp_poller": {
+      "params": [
+        "statId",
+        "filter_pollers",
+        "tenants"
+      ],
+      "required": [
+        "statId"
+      ]
+    },
+    "auvik_status": {
+      "params": [],
+      "required": []
+    },
+    "auvik_tenants_detail": {
+      "params": [
+        "tenantId"
+      ],
+      "required": [
+        "tenantId"
+      ]
+    },
+    "auvik_tenants_get": {
+      "params": [
+        "tenantId"
+      ],
+      "required": [
+        "tenantId"
+      ]
+    },
+    "auvik_tenants_list": {
+      "params": [],
+      "required": []
+    }
+  },
+  "upstream": {
+    "auvik_alerts_dismiss": {
+      "params": [
+        "alertId",
+        "tenants"
+      ],
+      "required": [
+        "alertId"
+      ]
+    },
+    "auvik_alerts_get": {
+      "params": [
+        "alertId",
+        "tenants"
+      ],
+      "required": [
+        "alertId"
+      ]
+    },
+    "auvik_alerts_list": {
+      "params": [
+        "filter_detectedTimeAfter",
+        "filter_detectedTimeBefore",
+        "filter_status",
+        "filter_severity",
+        "sort",
+        "pageSize",
+        "pageAfter",
+        "tenants"
+      ],
+      "required": []
+    },
+    "auvik_billing_client_usage": {
+      "params": [
+        "fromDate",
+        "thruDate",
+        "tenants"
+      ],
+      "required": [
+        "fromDate",
+        "thruDate"
+      ]
+    },
+    "auvik_billing_device_usage": {
+      "params": [
+        "deviceId",
+        "fromDate",
+        "thruDate",
+        "tenants"
+      ],
+      "required": [
+        "deviceId",
+        "fromDate",
+        "thruDate"
+      ]
+    },
+    "auvik_configurations_get": {
+      "params": [
+        "configId",
+        "tenants"
+      ],
+      "required": [
+        "configId"
+      ]
+    },
+    "auvik_configurations_list": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_devices"
+      ],
+      "required": []
+    },
+    "auvik_devices_get": {
+      "params": [
+        "deviceId",
+        "tenants"
+      ],
+      "required": [
+        "deviceId"
+      ]
+    },
+    "auvik_devices_get_details": {
+      "params": [
+        "deviceId",
+        "tenants"
+      ],
+      "required": [
+        "deviceId"
+      ]
+    },
+    "auvik_devices_get_lifecycle": {
+      "params": [
+        "deviceId",
+        "tenants"
+      ],
+      "required": [
+        "deviceId"
+      ]
+    },
+    "auvik_devices_get_warranty": {
+      "params": [
+        "deviceId",
+        "tenants"
+      ],
+      "required": [
+        "deviceId"
+      ]
+    },
+    "auvik_devices_list": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_deviceType",
+        "filter_modifiedAfter",
+        "filter_vendorName",
+        "filter_onlineStatus"
+      ],
+      "required": []
+    },
+    "auvik_entities_list_audits": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_entityId"
+      ],
+      "required": []
+    },
+    "auvik_entities_list_notes": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_entityId"
+      ],
+      "required": []
+    },
+    "auvik_interfaces_list": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_parentDevice",
+        "filter_interfaceType"
+      ],
+      "required": []
+    },
+    "auvik_navigate": {
+      "params": [],
+      "required": []
+    },
+    "auvik_networks_get": {
+      "params": [
+        "networkId",
+        "tenants"
+      ],
+      "required": [
+        "networkId"
+      ]
+    },
+    "auvik_networks_list": {
+      "params": [
+        "page",
+        "pageSize",
+        "tenants",
+        "filter_networkType",
+        "filter_modifiedAfter"
+      ],
+      "required": []
+    },
+    "auvik_raw_request": {
+      "params": [
+        "method",
+        "path",
+        "query",
+        "body"
+      ],
+      "required": [
+        "path"
+      ]
+    },
+    "auvik_statistics_device": {
+      "params": [
+        "statId",
+        "fromTime",
+        "interval",
+        "thruTime",
+        "filter_devices",
+        "tenants"
+      ],
+      "required": [
+        "statId",
+        "fromTime",
+        "interval"
+      ]
+    },
+    "auvik_statistics_interface": {
+      "params": [
+        "statId",
+        "fromTime",
+        "interval",
+        "thruTime",
+        "filter_interfaces",
+        "tenants"
+      ],
+      "required": [
+        "statId",
+        "fromTime",
+        "interval"
+      ]
+    },
+    "auvik_statistics_service": {
+      "params": [
+        "statId",
+        "fromTime",
+        "interval",
+        "thruTime",
+        "filter_services",
+        "tenants"
+      ],
+      "required": [
+        "statId",
+        "fromTime",
+        "interval"
+      ]
+    },
+    "auvik_statistics_snmp_poller": {
+      "params": [
+        "statId",
+        "filter_pollers",
+        "tenants"
+      ],
+      "required": [
+        "statId"
+      ]
+    },
+    "auvik_status": {
+      "params": [],
+      "required": []
+    },
+    "auvik_tenants_detail": {
+      "params": [
+        "tenantId"
+      ],
+      "required": [
+        "tenantId"
+      ]
+    },
+    "auvik_tenants_get": {
+      "params": [
+        "tenantId"
+      ],
+      "required": [
+        "tenantId"
+      ]
+    },
+    "auvik_tenants_list": {
+      "params": [],
+      "required": []
+    }
+  }
+}

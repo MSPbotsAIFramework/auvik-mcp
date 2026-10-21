@@ -20,7 +20,7 @@ from pydantic import Field
 
 from .._jsonapi import list_result
 from ..api_client import AuvikClient
-from ._common import READ_ONLY, ClientFactory, Tenants, path_id, run_tool
+from ._common import READ_ONLY, ClientFactory, IgnoredTenants, Tenants, path_id, run_tool
 
 FromDate = Annotated[str, Field(description="First day, YYYY-MM-DD.")]
 ThruDate = Annotated[str, Field(description="Last day, YYYY-MM-DD.")]
@@ -49,6 +49,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         deviceId: Annotated[str, Field(description="Auvik device ID.")],
         fromDate: FromDate,
         thruDate: ThruDate,
+        tenants: IgnoredTenants = None,
     ) -> str:
         """Get billable usage of one device for a date range."""
 

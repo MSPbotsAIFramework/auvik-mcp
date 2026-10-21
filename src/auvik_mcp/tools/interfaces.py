@@ -18,9 +18,18 @@ from typing import Annotated, Literal
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from .._jsonapi import list_result
 from ..api_client import AuvikClient
-from ._common import READ_ONLY, ClientFactory, PageAfter, PageSize, Tenants, page_params, run_tool
+from ._common import (
+    READ_ONLY,
+    ClientFactory,
+    PageAfter,
+    PageNumber,
+    PageSize,
+    Tenants,
+    fetch_list,
+    page_params,
+    run_tool,
+)
 
 OperationalStatus = Literal[
     "online", "offline", "unreachable", "testing", "unknown", "dormant", "notPresent", "lowerLayerDown"
@@ -30,6 +39,7 @@ OperationalStatus = Literal[
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_interfaces_list(
+        page: PageNumber = None,
         pageSize: PageSize = None,
         pageAfter: PageAfter = None,
         tenants: Tenants = None,
@@ -59,6 +69,6 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[operationalStatus]": filter_operationalStatus,
                 "filter[adminStatus]": filter_adminStatus,
             }
-            return list_result(await client.get("/v1/inventory/interface/info", params))
+            return await fetch_list(client, "/v1/inventory/interface/info", params, page)
 
         return await run_tool("auvik_interfaces_list", client_factory, action)

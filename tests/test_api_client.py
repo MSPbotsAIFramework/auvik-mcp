@@ -210,3 +210,134 @@ async def test_tenants_detail_resolves_main_domain_prefix(monkeypatch):
     assert seen[-1].path == "/v1/tenants/detail/2"
     assert seen[-1].params["tenantDomainPrefix"] == "example"
     assert json.loads(content[0].text) == {"id": "2", "type": "tenantDetail", "available": True}
+
+
+async def _call(monkeypatch, handler, tool, args):
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(api_client, "_get_shared_http_client", lambda: mock_http)
+    mcp = create_mcp_server()
+    token = _credentials_var.set(AuvikCredentials("u", "k", "us1"))
+    try:
+        content, _ = await mcp.call_tool(tool, args)
+    finally:
+        _credentials_var.reset(token)
+    return json.loads(content[0].text)
+
+
+def _cursor_pages(seen, last_page=3):
+    """Pages 1..last_page; page N's next link carries cursor "C<N>"."""
+
+    def handler(request):
+        seen.append(dict(request.url.params))
+        after = request.url.params.get("page[after]")
+        number = 1 if after is None else int(after[1:]) + 1
+        doc = {"data": [{"id": f"item-{number}", "type": "device", "attributes": {}}]}
+        if number < last_page:
+            doc["links"] = {"next": f"https://x/v1/inventory/device/info?page%5Bafter%5D=C{number}"}
+        return httpx.Response(200, json=doc)
+
+    return handler
+
+
+async def test_page_number_walks_cursors(monkeypatch):
+    seen = []
+    payload = await _call(monkeypatch, _cursor_pages(seen), "auvik_devices_list", {"page": 2, "pageSize": 5})
+    assert [p.get("page[after]") for p in seen] == [None, "C1"]
+    assert all(p["page[first]"] == "5" for p in seen)
+    assert payload["items"][0]["id"] == "item-2"
+    assert payload["next_cursor"] == "C2"
+
+    seen.clear()
+    payload = await _call(monkeypatch, _cursor_pages(seen), "auvik_networks_list", {"page": 3})
+    assert [p.get("page[after]") for p in seen] == [None, "C1", "C2"]
+    assert payload["items"][0]["id"] == "item-3"
+    assert payload["has_more"] is False
+
+
+async def test_page_one_is_a_single_request(monkeypatch):
+    seen = []
+    payload = await _call(monkeypatch, _cursor_pages(seen), "auvik_interfaces_list", {"page": 1})
+    assert len(seen) == 1 and "page[after]" not in seen[0]
+    assert payload["next_cursor"] == "C1"
+
+
+async def test_page_past_the_end_returns_empty(monkeypatch):
+    seen = []
+    payload = await _call(monkeypatch, _cursor_pages(seen, last_page=2), "auvik_configurations_list", {"page": 5})
+    assert len(seen) == 2
+    assert payload == {"items": [], "count": 0, "has_more": False, "next_cursor": None}
+
+
+@pytest.mark.parametrize(
+    "args",
+    [{"page": 2, "pageAfter": "C1"}, {"page": 21}, {"page": 0}],
+)
+async def test_page_number_invalid_arguments(monkeypatch, args):
+    seen = []
+    payload = await _call(monkeypatch, _cursor_pages(seen), "auvik_entities_list_notes", args)
+    assert payload["error"]["code"] == "invalid_argument"
+    assert seen == []
+
+
+ALERT_PAGE = {
+    "data": [
+        {"id": "a1", "type": "alert", "attributes": {"detectedTime": "2026-01-02T00:00:00.000Z", "name": "b"}},
+        {"id": "a2", "type": "alert", "attributes": {"detectedTime": "2026-01-03T00:00:00.000Z", "name": "c"}},
+        {"id": "a3", "type": "alert", "attributes": {"name": "a"}},
+        {"id": "a4", "type": "alert", "attributes": {"detectedTime": "2026-01-01T00:00:00.000Z", "name": "d"}},
+    ]
+}
+
+
+@pytest.mark.parametrize(
+    "sort,expected",
+    [
+        ("-detectedTime", ["a2", "a1", "a4", "a3"]),
+        ("detectedTime", ["a4", "a1", "a2", "a3"]),
+        ("name", ["a3", "a1", "a2", "a4"]),
+        ("noSuchField", ["a1", "a2", "a3", "a4"]),
+    ],
+)
+async def test_alerts_sort_orders_returned_page(monkeypatch, sort, expected):
+    seen = []
+
+    def handler(request):
+        seen.append(dict(request.url.params))
+        return httpx.Response(200, json=ALERT_PAGE)
+
+    payload = await _call(monkeypatch, handler, "auvik_alerts_list", {"sort": sort})
+    assert [i["id"] for i in payload["items"]] == expected
+    assert "sort" not in seen[0]
+
+
+async def test_audits_filter_entity_id_filters_returned_page(monkeypatch):
+    seen = []
+
+    def audit(audit_id, device_id):
+        return {
+            "id": audit_id,
+            "type": "entityAudit",
+            "attributes": {"user": "tech"},
+            "relationships": {"device": {"data": {"type": "device", "id": device_id}}},
+        }
+
+    def handler(request):
+        seen.append(dict(request.url.params))
+        return httpx.Response(200, json={"data": [audit("x1", "dev-1"), audit("x2", "dev-2"), audit("x3", "dev-1")]})
+
+    payload = await _call(monkeypatch, handler, "auvik_entities_list_audits", {"filter_entityId": "dev-1"})
+    assert [i["id"] for i in payload["items"]] == ["x1", "x3"]
+    assert payload["count"] == 2
+    assert not any(k.startswith("filter[entity") for k in seen[0])
+
+
+async def test_get_by_id_accepts_and_ignores_tenants(monkeypatch):
+    seen = []
+
+    def handler(request):
+        seen.append(request.url)
+        return httpx.Response(200, json={"data": {"id": "dev-1", "type": "device", "attributes": {}}})
+
+    payload = await _call(monkeypatch, handler, "auvik_devices_get", {"deviceId": "dev-1", "tenants": "100,200"})
+    assert payload["id"] == "dev-1"
+    assert "tenants" not in seen[0].params

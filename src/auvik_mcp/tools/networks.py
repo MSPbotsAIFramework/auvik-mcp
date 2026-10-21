@@ -18,15 +18,18 @@ from typing import Annotated, Literal
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from .._jsonapi import list_result, single_result
+from .._jsonapi import single_result
 from ..api_client import AuvikClient
 from ._common import (
     READ_ONLY,
     ClientFactory,
+    IgnoredTenants,
     IsoTime,
     PageAfter,
+    PageNumber,
     PageSize,
     Tenants,
+    fetch_list,
     page_params,
     path_id,
     run_tool,
@@ -38,6 +41,7 @@ NetworkType = Literal["routed", "vlan", "wifi", "loopback", "network", "layer2",
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_networks_list(
+        page: PageNumber = None,
         pageSize: PageSize = None,
         pageAfter: PageAfter = None,
         tenants: Tenants = None,
@@ -56,13 +60,14 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[modifiedAfter]": filter_modifiedAfter,
                 "filter[devices]": filter_devices,
             }
-            return list_result(await client.get("/v1/inventory/network/info", params))
+            return await fetch_list(client, "/v1/inventory/network/info", params, page)
 
         return await run_tool("auvik_networks_list", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_networks_get(
         networkId: Annotated[str, Field(description="Auvik network ID (from auvik_networks_list).")],
+        tenants: IgnoredTenants = None,
     ) -> str:
         """Get one network's info plus its detail (scope, collectors, excluded IPs)."""
 

@@ -18,15 +18,18 @@ from typing import Annotated, Literal
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from .._jsonapi import list_result, single_result
+from .._jsonapi import single_result
 from ..api_client import AuvikClient
 from ._common import (
     READ_ONLY,
     ClientFactory,
+    IgnoredTenants,
     IsoTime,
     PageAfter,
+    PageNumber,
     PageSize,
     Tenants,
+    fetch_list,
     page_params,
     path_id,
     run_tool,
@@ -42,6 +45,7 @@ OnlineStatus = Literal[
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_devices_list(
+        page: PageNumber = None,
         pageSize: PageSize = None,
         pageAfter: PageAfter = None,
         tenants: Tenants = None,
@@ -80,12 +84,12 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[makeModel]": filter_makeModel,
                 "filter[networks]": filter_networks,
             }
-            return list_result(await client.get("/v1/inventory/device/info", params))
+            return await fetch_list(client, "/v1/inventory/device/info", params, page)
 
         return await run_tool("auvik_devices_list", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
-    async def auvik_devices_get(deviceId: DeviceId) -> str:
+    async def auvik_devices_get(deviceId: DeviceId, tenants: IgnoredTenants = None) -> str:
         """Get one device's summary info: name, type, vendor, model, IPs, firmware, online status."""
 
         async def action(client: AuvikClient) -> dict:
@@ -94,7 +98,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         return await run_tool("auvik_devices_get", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
-    async def auvik_devices_get_details(deviceId: DeviceId) -> str:
+    async def auvik_devices_get_details(deviceId: DeviceId, tenants: IgnoredTenants = None) -> str:
         """Get one device's management details: discovery and manage status.
 
         Covers SNMP/WMI/login/VMware discovery, manage status and traffic
@@ -107,7 +111,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         return await run_tool("auvik_devices_get_details", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
-    async def auvik_devices_get_warranty(deviceId: DeviceId) -> str:
+    async def auvik_devices_get_warranty(deviceId: DeviceId, tenants: IgnoredTenants = None) -> str:
         """Get one device's warranty and service-contract coverage."""
 
         async def action(client: AuvikClient) -> dict:
@@ -116,7 +120,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         return await run_tool("auvik_devices_get_warranty", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
-    async def auvik_devices_get_lifecycle(deviceId: DeviceId) -> str:
+    async def auvik_devices_get_lifecycle(deviceId: DeviceId, tenants: IgnoredTenants = None) -> str:
         """Get one device's lifecycle status: sales availability, software maintenance and end-of-support."""
 
         async def action(client: AuvikClient) -> dict:

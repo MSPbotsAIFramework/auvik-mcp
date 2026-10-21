@@ -45,28 +45,39 @@ cover every tenant the API user can access.
 | `auvik_tenants_list` | List the MSP account and its client tenants | - |
 | `auvik_tenants_get` | One tenant's basic record | **tenantId** |
 | `auvik_tenants_detail` | One tenant's detail, incl. API availability | **tenantId**, tenantDomainPrefix |
-| `auvik_devices_list` | List devices | pageSize, pageAfter, tenants, filter_deviceType, filter_modifiedAfter, filter_vendorName, filter_onlineStatus, filter_makeModel, filter_networks |
-| `auvik_devices_get` | One device's info | **deviceId** |
-| `auvik_devices_get_details` | One device's discovery/manage status | **deviceId** |
-| `auvik_devices_get_warranty` | One device's warranty coverage | **deviceId** |
-| `auvik_devices_get_lifecycle` | One device's lifecycle / end-of-support | **deviceId** |
-| `auvik_networks_list` | List networks (subnets, VLANs, Wi-Fi) | pageSize, pageAfter, tenants, filter_networkType, filter_modifiedAfter, filter_devices |
-| `auvik_networks_get` | One network with its detail | **networkId** |
-| `auvik_interfaces_list` | List interfaces | pageSize, pageAfter, tenants, filter_parentDevice, filter_interfaceType, filter_operationalStatus, filter_adminStatus |
-| `auvik_configurations_list` | List configuration backups | pageSize, pageAfter, tenants, filter_devices, filter_backupTimeAfter, filter_backupTimeBefore, filter_isRunning |
-| `auvik_configurations_get` | One configuration backup | **configId** |
-| `auvik_entities_list_notes` | Notes on devices/networks/interfaces | pageSize, pageAfter, tenants, filter_entityId, filter_entityType, filter_entityName, filter_modifiedAfter |
-| `auvik_entities_list_audits` | Remote-access session audit records | pageSize, pageAfter, tenants, filter_user, filter_category, filter_status, filter_modifiedAfter |
-| `auvik_alerts_list` | List alert history | filter_detectedTimeAfter, filter_detectedTimeBefore, filter_status, filter_severity, filter_dismissed, filter_entityId, pageSize, pageAfter, tenants |
-| `auvik_alerts_get` | One alert | **alertId** |
-| `auvik_alerts_dismiss` | Dismiss one alert (**changes data**) | **alertId** |
+| `auvik_devices_list` | List devices | page, pageSize, pageAfter, tenants, filter_deviceType, filter_modifiedAfter, filter_vendorName, filter_onlineStatus, filter_makeModel, filter_networks |
+| `auvik_devices_get` | One device's info | **deviceId**, tenants (ignored) |
+| `auvik_devices_get_details` | One device's discovery/manage status | **deviceId**, tenants (ignored) |
+| `auvik_devices_get_warranty` | One device's warranty coverage | **deviceId**, tenants (ignored) |
+| `auvik_devices_get_lifecycle` | One device's lifecycle / end-of-support | **deviceId**, tenants (ignored) |
+| `auvik_networks_list` | List networks (subnets, VLANs, Wi-Fi) | page, pageSize, pageAfter, tenants, filter_networkType, filter_modifiedAfter, filter_devices |
+| `auvik_networks_get` | One network with its detail | **networkId**, tenants (ignored) |
+| `auvik_interfaces_list` | List interfaces | page, pageSize, pageAfter, tenants, filter_parentDevice, filter_interfaceType, filter_operationalStatus, filter_adminStatus |
+| `auvik_configurations_list` | List configuration backups | page, pageSize, pageAfter, tenants, filter_devices, filter_backupTimeAfter, filter_backupTimeBefore, filter_isRunning |
+| `auvik_configurations_get` | One configuration backup | **configId**, tenants (ignored) |
+| `auvik_entities_list_notes` | Notes on devices/networks/interfaces | page, pageSize, pageAfter, tenants, filter_entityId, filter_entityType, filter_entityName, filter_modifiedAfter |
+| `auvik_entities_list_audits` | Remote-access session audit records | page, pageSize, pageAfter, tenants, filter_user, filter_category, filter_status, filter_modifiedAfter, filter_entityId (local) |
+| `auvik_alerts_list` | List alert history | filter_detectedTimeAfter, filter_detectedTimeBefore, filter_status, filter_severity, filter_dismissed, filter_entityId, sort (local), pageSize, pageAfter, tenants |
+| `auvik_alerts_get` | One alert | **alertId**, tenants (ignored) |
+| `auvik_alerts_dismiss` | Dismiss one alert (**changes data**) | **alertId**, tenants (ignored) |
 | `auvik_statistics_device` | Device metrics over time | **statId**, **fromTime**, **interval**, thruTime, filter_devices, pageSize, pageAfter, tenants |
 | `auvik_statistics_interface` | Interface metrics over time | **statId**, **fromTime**, **interval**, thruTime, filter_interfaces, filter_parentDevice, pageSize, pageAfter, tenants |
 | `auvik_statistics_service` | Ping time / packet loss of monitored services | **statId**, **fromTime**, **interval**, thruTime, filter_services, pageSize, pageAfter, tenants |
 | `auvik_statistics_snmp_poller` | Custom SNMP poller value history | **statId** (`int`/`string`), filter_pollers, filter_deviceId, fromTime, thruTime, interval, pageSize, pageAfter, tenants |
 | `auvik_billing_client_usage` | Billable usage per client | **fromDate**, **thruDate**, tenants |
-| `auvik_billing_device_usage` | Billable usage of one device | **deviceId**, **fromDate**, **thruDate** |
+| `auvik_billing_device_usage` | Billable usage of one device | **deviceId**, **fromDate**, **thruDate**, tenants (ignored) |
 | `auvik_raw_request` | Any other documented `/v1` endpoint (**POST changes data**) | **path**, method, query, body |
+
+Compatibility parameters (kept so existing callers keep working; the Auvik API has no equivalent):
+
+- `page` (1-20) on the inventory/entity list tools: page N is reached by following the
+  `page[after]` cursor N-1 times, then returned with its `next_cursor` as usual. Prefer
+  `pageAfter`; passing both is an `invalid_argument` error, as is a page above 20.
+- `sort` on `auvik_alerts_list` sorts the returned page locally by one attribute
+  (`-detectedTime` = newest first); an unknown attribute keeps the API order.
+- `filter_entityId` on `auvik_entities_list_audits` filters the returned page locally on the
+  record's device ID, so other pages may hold more matches.
+- `tenants (ignored)` on get-by-id tools is accepted and ignored: an ID is unique across tenants.
 
 Metric values for `statId`:
 

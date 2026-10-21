@@ -18,15 +18,17 @@ from typing import Annotated, Literal
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from .._jsonapi import list_result
 from ..api_client import AuvikClient
 from ._common import (
     READ_ONLY,
     ClientFactory,
     IsoTime,
     PageAfter,
+    PageNumber,
     PageSize,
     Tenants,
+    fetch_list,
+    filter_items,
     page_params,
     run_tool,
 )
@@ -35,6 +37,7 @@ from ._common import (
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_entities_list_notes(
+        page: PageNumber = None,
         pageSize: PageSize = None,
         pageAfter: PageAfter = None,
         tenants: Tenants = None,
@@ -55,12 +58,13 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[entityName]": filter_entityName,
                 "filter[modifiedAfter]": filter_modifiedAfter,
             }
-            return list_result(await client.get("/v1/inventory/entity/note", params))
+            return await fetch_list(client, "/v1/inventory/entity/note", params, page)
 
         return await run_tool("auvik_entities_list_notes", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_entities_list_audits(
+        page: PageNumber = None,
         pageSize: PageSize = None,
         pageAfter: PageAfter = None,
         tenants: Tenants = None,
@@ -68,8 +72,20 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         filter_category: Literal["unknown", "tunnel", "terminal", "remoteBrowser"] | None = None,
         filter_status: Literal["unknown", "initiated", "created", "closed", "failed"] | None = None,
         filter_modifiedAfter: IsoTime = None,
+        filter_entityId: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Device ID the session targeted. Filters the returned page locally on the "
+                    "record's device; the API has no such filter, so other pages may hold more."
+                )
+            ),
+        ] = None,
     ) -> str:
-        """List audit records of remote-access sessions (tunnel, terminal, remote browser) and who ran them."""
+        """List audit records of remote-access sessions (tunnel, terminal, remote browser) and who ran them.
+
+        filter_entityId filters the returned page locally by device ID.
+        """
 
         async def action(client: AuvikClient) -> dict:
             params = page_params(pageSize, pageAfter) | {
@@ -79,6 +95,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[status]": filter_status,
                 "filter[modifiedAfter]": filter_modifiedAfter,
             }
-            return list_result(await client.get("/v1/inventory/entity/audit", params))
+            result = await fetch_list(client, "/v1/inventory/entity/audit", params, page)
+            return filter_items(result, "device", filter_entityId)
 
         return await run_tool("auvik_entities_list_audits", client_factory, action)

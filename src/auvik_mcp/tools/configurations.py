@@ -18,15 +18,18 @@ from typing import Annotated
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from .._jsonapi import list_result, single_result
+from .._jsonapi import single_result
 from ..api_client import AuvikClient
 from ._common import (
     READ_ONLY,
     ClientFactory,
+    IgnoredTenants,
     IsoTime,
     PageAfter,
+    PageNumber,
     PageSize,
     Tenants,
+    fetch_list,
     page_params,
     path_id,
     run_tool,
@@ -36,6 +39,7 @@ from ._common import (
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_configurations_list(
+        page: PageNumber = None,
         pageSize: PageSize = None,
         pageAfter: PageAfter = None,
         tenants: Tenants = None,
@@ -61,13 +65,14 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[backupTimeBefore]": filter_backupTimeBefore,
                 "filter[isRunning]": filter_isRunning,
             }
-            return list_result(await client.get("/v1/inventory/configuration", params))
+            return await fetch_list(client, "/v1/inventory/configuration", params, page)
 
         return await run_tool("auvik_configurations_list", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_configurations_get(
         configId: Annotated[str, Field(description="Configuration backup ID (from auvik_configurations_list).")],
+        tenants: IgnoredTenants = None,
     ) -> str:
         """Get one device configuration backup record by ID."""
 

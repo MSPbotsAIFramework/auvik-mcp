@@ -24,6 +24,7 @@ from ..api_client import AuvikClient
 from ._common import (
     READ_ONLY,
     ClientFactory,
+    IgnoredTenants,
     IsoTime,
     PageAfter,
     PageSize,
@@ -31,6 +32,7 @@ from ._common import (
     page_params,
     path_id,
     run_tool,
+    sort_items,
 )
 
 AlertId = Annotated[str, Field(description="Auvik alert ID (from auvik_alerts_list).")]
@@ -47,6 +49,15 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         filter_entityId: Annotated[
             str | None, Field(description="Device, interface or network ID the alert is about.")
         ] = None,
+        sort: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Attribute to order by, e.g. -detectedTime (leading - = descending). "
+                    "Sorts the returned page only; an unknown attribute keeps API order."
+                )
+            ),
+        ] = None,
         pageSize: PageSize = None,
         pageAfter: PageAfter = None,
         tenants: Tenants = None,
@@ -54,7 +65,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         """List alerts from alert history (name, severity, status, entity, detected time).
 
         Set filter_detectedTimeAfter to focus on recent alerts instead of the
-        whole history; status=created means still open.
+        whole history; status=created means still open. sort sorts the returned page.
         """
 
         async def action(client: AuvikClient) -> dict:
@@ -67,12 +78,12 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[dismissed]": filter_dismissed,
                 "filter[entityId]": filter_entityId,
             }
-            return list_result(await client.get("/v1/alert/history/info", params))
+            return sort_items(list_result(await client.get("/v1/alert/history/info", params)), sort)
 
         return await run_tool("auvik_alerts_list", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
-    async def auvik_alerts_get(alertId: AlertId) -> str:
+    async def auvik_alerts_get(alertId: AlertId, tenants: IgnoredTenants = None) -> str:
         """Get one alert's full record by ID."""
 
         async def action(client: AuvikClient) -> dict:
@@ -85,7 +96,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
             readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True
         )
     )
-    async def auvik_alerts_dismiss(alertId: AlertId) -> str:
+    async def auvik_alerts_dismiss(alertId: AlertId, tenants: IgnoredTenants = None) -> str:
         """Dismiss one alert in Auvik. Changes data: the alert is marked dismissed for everyone.
 
         Only call when the user explicitly asks to dismiss that alert ID.

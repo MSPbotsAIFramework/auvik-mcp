@@ -23,6 +23,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from .._json import dump_json_capped, error_envelope
+from .._jsonapi import list_result, next_cursor
 from ..api_client import AuvikClient, AuvikError
 
 logger = logging.getLogger("auvik_mcp.tools")
@@ -31,6 +32,7 @@ ClientFactory = Callable[[], AuvikClient | None]
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
+MAX_PAGE_NUMBER = 20
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=True)
 
@@ -46,6 +48,19 @@ Tenants = Annotated[
         description=(
             "Comma-separated Auvik tenant IDs to scope results (from auvik_tenants_list). "
             "Omit to cover all tenants the API user can access."
+        )
+    ),
+]
+IgnoredTenants = Annotated[
+    str | None,
+    Field(description="Accepted for compatibility; ignored because an id is unique across tenants."),
+]
+PageNumber = Annotated[
+    int | None,
+    Field(
+        description=(
+            f"1-based page number (max {MAX_PAGE_NUMBER}); reached by following next cursors, "
+            "so pageAfter is cheaper. Do not combine with pageAfter."
         )
     ),
 ]
@@ -69,6 +84,57 @@ def page_params(page_size: int | None, page_after: str | None) -> dict[str, Any]
     if page_after:
         params["page[after]"] = page_after
     return params
+
+
+async def fetch_list(
+    client: AuvikClient, path: str, params: dict[str, Any], page: int | None = None
+) -> dict[str, Any]:
+    """GET a collection and shape it; ``page`` N>1 follows the next cursor N-1 times."""
+    if page is None:
+        return list_result(await client.get(path, params))
+    if params.get("page[after]"):
+        raise ValueError("Pass either page or pageAfter, not both.")
+    page = int(page)
+    if page < 1 or page > MAX_PAGE_NUMBER:
+        raise ValueError(f"page must be between 1 and {MAX_PAGE_NUMBER}; use pageAfter to go further.")
+    for _ in range(page - 1):
+        cursor = next_cursor(await client.get(path, params))
+        if cursor is None:
+            return {"items": [], "count": 0, "has_more": False, "next_cursor": None}
+        params = params | {"page[after]": cursor}
+    return list_result(await client.get(path, params))
+
+
+def sort_items(result: dict[str, Any], sort: str | None) -> dict[str, Any]:
+    """Sort ``result["items"]`` locally by one attribute; leading "-" = descending.
+
+    Items lacking the attribute go last. An attribute no item has keeps API order.
+    """
+    field = (sort or "").strip()
+    descending = field.startswith("-")
+    field = field.lstrip("-+").strip()
+    items = result.get("items") or []
+    if not field or not any(isinstance(i, dict) and i.get(field) is not None for i in items):
+        return result
+    present = [i for i in items if isinstance(i, dict) and i.get(field) is not None]
+    absent = [i for i in items if not (isinstance(i, dict) and i.get(field) is not None)]
+    present.sort(key=lambda i: _sort_key(i[field]), reverse=descending)
+    return result | {"items": present + absent}
+
+
+def _sort_key(value: Any) -> tuple[int, Any]:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return (0, value)
+    return (1, str(value))
+
+
+def filter_items(result: dict[str, Any], key: str, value: str | None) -> dict[str, Any]:
+    """Keep only items whose ``key`` equals ``value`` (local filter on the returned page)."""
+    if value is None or not str(value).strip():
+        return result
+    wanted = str(value).strip()
+    items = [i for i in result.get("items") or [] if isinstance(i, dict) and str(i.get(key)) == wanted]
+    return result | {"items": items, "count": len(items)}
 
 
 def path_id(value: str) -> str:
