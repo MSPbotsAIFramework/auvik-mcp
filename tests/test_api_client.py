@@ -341,3 +341,53 @@ async def test_get_by_id_accepts_and_ignores_tenants(monkeypatch):
     payload = await _call(monkeypatch, handler, "auvik_devices_get", {"deviceId": "dev-1", "tenants": "100,200"})
     assert payload["id"] == "dev-1"
     assert "tenants" not in seen[0].params
+
+
+# ---- compatibility: enum params accept any casing (normalized) and unknown values (passed through)
+
+
+def _recording(seen):
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"data": []})
+
+    return handler
+
+
+@pytest.mark.parametrize(
+    "tool,stat,path",
+    [
+        ("auvik_statistics_device", "CPUUTILIZATION", "/v1/stat/device/cpuUtilization"),
+        ("auvik_statistics_device", "diskIo", "/v1/stat/device/diskIo"),
+        ("auvik_statistics_interface", "packetloss", "/v1/stat/interface/packetLoss"),
+        ("auvik_statistics_service", "PingTime", "/v1/stat/service/pingTime"),
+        ("auvik_statistics_service", "jitter/../x", "/v1/stat/service/jitter%2F..%2Fx"),
+    ],
+)
+async def test_statistics_enums_normalized_or_passed_through(monkeypatch, tool, stat, path):
+    seen = []
+    args = {"statId": stat, "fromTime": "2026-01-01T00:00:00.000Z", "interval": "HOUR", "tenants": "1"}
+    await _call(monkeypatch, _recording(seen), tool, args)
+    assert seen[0].url.raw_path.decode().split("?")[0] == path
+    assert seen[0].url.params["filter[interval]"] == "hour"
+
+
+async def test_statistics_unknown_interval_passed_through(monkeypatch):
+    seen = []
+    args = {"statId": "bandwidth", "fromTime": "2026-01-01T00:00:00.000Z", "interval": "week", "tenants": "1"}
+    await _call(monkeypatch, _recording(seen), "auvik_statistics_device", args)
+    assert seen[0].url.params["filter[interval]"] == "week"
+
+
+@pytest.mark.parametrize("given,sent", [("INT", "int"), ("counter", "counter")])
+async def test_snmp_poller_stat_normalized_or_passed_through(monkeypatch, given, sent):
+    seen = []
+    await _call(monkeypatch, _recording(seen), "auvik_statistics_snmp_poller", {"statId": given, "tenants": "1"})
+    assert seen[0].url.path == f"/v1/stat/snmppoller/{sent}"
+
+
+@pytest.mark.parametrize("given,sent", [("VLAN", "vlan"), ("WiFi", "wifi"), ("overlay", "overlay")])
+async def test_network_type_normalized_or_passed_through(monkeypatch, given, sent):
+    seen = []
+    await _call(monkeypatch, _recording(seen), "auvik_networks_list", {"filter_networkType": given, "tenants": "1"})
+    assert seen[0].url.params["filter[networkType]"] == sent

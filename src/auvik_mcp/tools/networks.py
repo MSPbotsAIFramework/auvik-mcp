@@ -29,6 +29,7 @@ from ._common import (
     PageNumber,
     PageSize,
     Tenants,
+    enum_value,
     fetch_list,
     page_params,
     path_id,
@@ -45,7 +46,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         pageSize: PageSize = None,
         pageAfter: PageAfter = None,
         tenants: Tenants = None,
-        filter_networkType: NetworkType | None = None,
+        filter_networkType: NetworkType | str | None = None,
         filter_modifiedAfter: IsoTime = None,
         filter_devices: Annotated[
             str | None, Field(description="Comma-separated device IDs; only networks those devices are on.")
@@ -56,7 +57,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         async def action(client: AuvikClient) -> dict:
             params = page_params(pageSize, pageAfter) | {
                 "tenants": tenants,
-                "filter[networkType]": filter_networkType,
+                "filter[networkType]": enum_value(filter_networkType, NetworkType),
                 "filter[modifiedAfter]": filter_modifiedAfter,
                 "filter[devices]": filter_devices,
             }

@@ -21,13 +21,33 @@ from pydantic import Field
 
 from .._jsonapi import list_result
 from ..api_client import AuvikClient
-from ._common import READ_ONLY, ClientFactory, PageAfter, PageSize, Tenants, page_params, run_tool
+from ._common import READ_ONLY, ClientFactory, PageAfter, PageSize, Tenants, enum_value, page_params, path_id, run_tool
 from .tenants import all_tenant_ids
 
 Interval = Literal["minute", "hour", "day"]
 FromTime = Annotated[str, Field(description="Start of the window, ISO 8601, e.g. 2026-01-31T00:00:00.000Z.")]
 ThruTime = Annotated[str | None, Field(description="End of the window, ISO 8601. Defaults to now.")]
-IntervalArg = Annotated[Interval, Field(description="Reporting interval: minute, hour or day.")]
+IntervalArg = Annotated[Interval | str, Field(description="Reporting interval: minute, hour or day.")]
+DeviceStat = Literal[
+    "bandwidth",
+    "cpuUtilization",
+    "memoryUtilization",
+    "storageUtilization",
+    "packetUnicast",
+    "packetMulticast",
+    "packetBroadcast",
+]
+InterfaceStat = Literal[
+    "bandwidth",
+    "utilization",
+    "packetLoss",
+    "packetDiscard",
+    "packetMulticast",
+    "packetUnicast",
+    "packetBroadcast",
+]
+ServiceStat = Literal["pingTime", "pingPacket"]
+PollerStat = Literal["int", "string"]
 
 
 def _window(thru_time: str | None) -> str:
@@ -41,18 +61,7 @@ def _iso(moment: datetime) -> str:
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_statistics_device(
-        statId: Annotated[
-            Literal[
-                "bandwidth",
-                "cpuUtilization",
-                "memoryUtilization",
-                "storageUtilization",
-                "packetUnicast",
-                "packetMulticast",
-                "packetBroadcast",
-            ],
-            Field(description="Metric to return."),
-        ],
+        statId: Annotated[DeviceStat | str, Field(description="Metric to return.")],
         fromTime: FromTime,
         interval: IntervalArg,
         thruTime: ThruTime = None,
@@ -68,27 +77,16 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "tenants": tenants,
                 "filter[fromTime]": fromTime,
                 "filter[thruTime]": _window(thruTime),
-                "filter[interval]": interval,
+                "filter[interval]": enum_value(interval, Interval),
                 "filter[deviceId]": filter_devices,
             }
-            return list_result(await client.get(f"/v1/stat/device/{statId}", params))
+            return list_result(await client.get(f"/v1/stat/device/{path_id(enum_value(statId, DeviceStat))}", params))
 
         return await run_tool("auvik_statistics_device", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_statistics_interface(
-        statId: Annotated[
-            Literal[
-                "bandwidth",
-                "utilization",
-                "packetLoss",
-                "packetDiscard",
-                "packetMulticast",
-                "packetUnicast",
-                "packetBroadcast",
-            ],
-            Field(description="Metric to return."),
-        ],
+        statId: Annotated[InterfaceStat | str, Field(description="Metric to return.")],
         fromTime: FromTime,
         interval: IntervalArg,
         thruTime: ThruTime = None,
@@ -109,18 +107,18 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "tenants": tenants,
                 "filter[fromTime]": fromTime,
                 "filter[thruTime]": _window(thruTime),
-                "filter[interval]": interval,
+                "filter[interval]": enum_value(interval, Interval),
                 "filter[interfaceId]": filter_interfaces,
                 "filter[parentDevice]": filter_parentDevice,
             }
-            return list_result(await client.get(f"/v1/stat/interface/{statId}", params))
+            return list_result(await client.get(f"/v1/stat/interface/{path_id(enum_value(statId, InterfaceStat))}", params))
 
         return await run_tool("auvik_statistics_interface", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_statistics_service(
         statId: Annotated[
-            Literal["pingTime", "pingPacket"],
+            ServiceStat | str,
             Field(description="pingTime = round-trip time, pingPacket = packet loss."),
         ],
         fromTime: FromTime,
@@ -140,17 +138,17 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "tenants": tenants,
                 "filter[fromTime]": fromTime,
                 "filter[thruTime]": _window(thruTime),
-                "filter[interval]": interval,
+                "filter[interval]": enum_value(interval, Interval),
                 "filter[serviceId]": filter_services,
             }
-            return list_result(await client.get(f"/v1/stat/service/{statId}", params))
+            return list_result(await client.get(f"/v1/stat/service/{path_id(enum_value(statId, ServiceStat))}", params))
 
         return await run_tool("auvik_statistics_service", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
     async def auvik_statistics_snmp_poller(
         statId: Annotated[
-            Literal["int", "string"],
+            PollerStat | str,
             Field(description="Value type of the SNMP poller: int (numeric) or string."),
         ],
         filter_pollers: Annotated[
@@ -182,8 +180,9 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[snmpPollerSettingId]": filter_pollers,
                 "filter[deviceId]": filter_deviceId,
             }
-            if statId == "int":
-                params["filter[interval]"] = interval or "hour"
-            return list_result(await client.get(f"/v1/stat/snmppoller/{statId}", params))
+            stat = enum_value(statId, PollerStat)
+            if stat == "int":
+                params["filter[interval]"] = enum_value(interval, Interval) or "hour"
+            return list_result(await client.get(f"/v1/stat/snmppoller/{path_id(stat)}", params))
 
         return await run_tool("auvik_statistics_snmp_poller", client_factory, action)
