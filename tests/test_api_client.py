@@ -563,3 +563,60 @@ async def test_page_number_keeps_the_fallback_scope(monkeypatch):
     ]
     assert payload["items"][0]["id"] == "item-2"
     assert payload["skipped_tenants"] == ["1139453103368087293"]
+
+
+def _usage_api(seen, clients):
+    """/v1/billing/usage/client returning one large record per requested client (no paging)."""
+
+    def handler(request):
+        params = dict(request.url.params)
+        seen.append(params)
+        wanted = params["tenants"].split(",") if params.get("tenants") else ["root"]
+        data = [
+            {
+                "id": tid,
+                "type": "clientUsage",
+                # Many short numeric fields: nothing the shortening step can trim.
+                "attributes": {f"day{d:02d}": d * 1000 + n for d in range(60)},
+            }
+            for n, tid in enumerate(wanted)
+            if tid in clients or tid == "root"
+        ]
+        return httpx.Response(200, json={"data": data})
+
+    return handler
+
+
+async def test_billing_client_usage_lists_the_clients_that_did_not_fit(monkeypatch):
+    clients = [str(1000000000000000000 + n) for n in range(27)]
+    seen, collected, calls = [], [], 0
+    args = {"fromDate": "2026-10-01", "thruDate": "2026-10-20", "tenants": ",".join(clients)}
+    while True:
+        payload = await _call(monkeypatch, _usage_api(seen, clients), "auvik_billing_client_usage", args)
+        calls += 1
+        assert "retry_page_size" not in payload
+        assert len(json.dumps(payload, separators=(",", ":"))) <= 20_000
+        collected += [i["id"] for i in payload["items"]]
+        if not payload.get("remaining_tenants"):
+            assert payload.get("truncated") is not True or payload["has_more"] is False
+            break
+        assert payload["has_more"] is True
+        assert payload["count"] == len(payload["items"])
+        assert "remaining_tenants" in payload["note"]
+        args = args | {"tenants": ",".join(payload["remaining_tenants"])}
+        assert calls < 10
+    assert calls > 1  # the first call really was cut
+    assert sorted(collected) == sorted(clients)  # no gaps, no duplicates
+    assert [p["filter[fromDate]"] for p in seen] == ["2026-10-01"] * calls
+
+
+async def test_billing_client_usage_that_fits_is_unchanged(monkeypatch):
+    seen = []
+    payload = await _call(
+        monkeypatch,
+        _usage_api(seen, ["1"]),
+        "auvik_billing_client_usage",
+        {"fromDate": "2026-10-01", "thruDate": "2026-10-20"},
+    )
+    assert [i["id"] for i in payload["items"]] == ["root"]
+    assert "remaining_tenants" not in payload and "truncated" not in payload

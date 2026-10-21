@@ -41,6 +41,11 @@ API user has no permission on some tenants, the call is repeated with the client
 `auvik_tenants_list` minus the ones the 403 names; those are returned in `skipped_tenants` (with a
 `scope_note`), so nothing is left out silently.
 
+`auvik_billing_client_usage` has no paging: Auvik returns every requested client at once. Without
+`tenants` it returns one record that rolls up the whole account; pass client tenant IDs for one
+record per client. If the clients do not all fit the response size limit, the rest are listed in
+`remaining_tenants`; call again with those as `tenants`.
+
 | Tool | Purpose | Parameters (required in **bold**) |
 |---|---|---|
 | `auvik_status` | Check that the credentials are valid | - |
