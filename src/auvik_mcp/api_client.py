@@ -86,6 +86,9 @@ class AuvikCredentials:
     username: str
     api_key: str
     region: str = DEFAULT_REGION
+    # Set when a header value is malformed: tools then return invalid_argument
+    # instead of calling Auvik, while tools/list still works.
+    header_error: str | None = None
 
     def __repr__(self) -> str:  # never leak the key into logs or tracebacks
         return f"AuvikCredentials(username=<redacted>, api_key=<redacted>, region={self.region!r})"
@@ -97,6 +100,7 @@ class AuvikClient:
     def __init__(self, credentials: AuvikCredentials, http_client: httpx.AsyncClient | None = None):
         self._credentials = credentials
         self._http = http_client
+        self.header_error = credentials.header_error
         self.base_url = api_base_url(credentials.region)
 
     @property

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Credential middleware: 401 on missing headers, per-request isolation."""
+"""Credential middleware: 401 on missing headers, deferred header errors, per-request isolation."""
 
 import asyncio
 
@@ -58,16 +58,26 @@ def test_partial_headers_return_401():
     assert "X-Auvik-Api-Key" in resp.json()["message"]
 
 
-def test_unknown_region_returns_400():
+def test_placeholder_headers_still_list_tools():
+    # The admin console refreshes the tool catalog with placeholder header values.
+    headers = {"X-Auvik-Username": "placeholder", "X-Auvik-Api-Key": "placeholder", "X-Auvik-Region": "placeholder"}
+    with _client() as client:
+        resp = client.post("/mcp", json=LIST_TOOLS, headers=MCP_HEADERS | headers)
+    assert resp.status_code == 200
+    assert "auvik_devices_list" in resp.text
+
+
+def test_unknown_region_is_reported_by_tools():
     headers = MCP_HEADERS | {
         "X-Auvik-Username": "user@example.com",
         "X-Auvik-Api-Key": "YOUR_API_KEY",
         "X-Auvik-Region": "mars1",
     }
+    call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "auvik_status", "arguments": {}}}
     with _client() as client:
-        resp = client.post("/mcp", json=LIST_TOOLS, headers=headers)
-    assert resp.status_code == 400
-    assert "us1" in resp.json()["allowed_values"]
+        resp = client.post("/mcp", json=call, headers=headers)
+    assert resp.status_code == 200
+    assert '\\"invalid_argument\\"' in resp.text and "X-Auvik-Region must be one of: us1" in resp.text
 
 
 def test_tools_list_over_http_with_headers():
@@ -109,6 +119,7 @@ def test_headers_reach_request_context_and_are_reset():
     creds = seen["credentials"]
     assert (creds.username, creds.api_key, creds.region) == ("user@example.com", "YOUR_API_KEY", "eu1")
     assert seen["client"].base_url == "https://auvikapi.eu1.my.auvik.com"
+    assert seen["client"].header_error is None
     assert _credentials_var.get() is None
     assert get_client_from_context() is None
 

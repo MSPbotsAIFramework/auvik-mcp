@@ -29,7 +29,7 @@ Where to get them:
   [Auvik role permissions](https://support.auvik.com/hc/en-us/articles/115002815966).
 
 A request to `/mcp` without the required headers gets HTTP 401 with the list of required headers;
-an unknown region gets HTTP 400.
+an unknown region does not block the request, and tools return `invalid_argument` instead.
 
 ## Tools
 

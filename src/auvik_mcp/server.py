@@ -77,7 +77,8 @@ def get_client_from_context() -> AuvikClient | None:
 class GatewayCredentialsMiddleware:
     """Reads X-Auvik-* headers on /mcp requests into the request context.
 
-    Missing required headers -> 401 listing them; unknown region -> 400.
+    Missing required headers -> 401 listing them. An unknown region does not block
+    the request (tools/list must work with any values); tools report it instead.
     """
 
     def __init__(self, app: ASGIApp):
@@ -106,19 +107,13 @@ class GatewayCredentialsMiddleware:
             )(scope, receive, send)
             return
 
+        header_error = None
         if region not in REGIONS:
-            await JSONResponse(
-                {
-                    "error": "Invalid region",
-                    "message": f"{HEADER_REGION} must be one of: {', '.join(REGIONS)}",
-                    "allowed_values": list(REGIONS),
-                },
-                status_code=400,
-            )(scope, receive, send)
-            return
+            header_error = f"{HEADER_REGION} must be one of: {', '.join(REGIONS)}"
+            region = DEFAULT_REGION
 
         request_id = (request.headers.get("x-request-id") or "").strip()[:64] or uuid.uuid4().hex[:12]
-        creds_token = _credentials_var.set(AuvikCredentials(username, api_key, region))
+        creds_token = _credentials_var.set(AuvikCredentials(username, api_key, region, header_error))
         rid_token = request_id_var.set(request_id)
         try:
             await self.app(scope, receive, send)
