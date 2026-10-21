@@ -18,31 +18,42 @@ from typing import Annotated
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from .._jsonapi import list_result, single_result
+from .._jsonapi import single_result
 from ..api_client import AuvikClient, AuvikError
-from ._common import READ_ONLY, ClientFactory, path_id, run_tool
+from ._common import READ_ONLY, ClientFactory, fetch_tenants, path_id, run_tool
 
 TenantId = Annotated[str, Field(description="Auvik tenant ID (from auvik_tenants_list).")]
 
 
-async def fetch_tenants(client: AuvikClient) -> list[dict]:
-    """All tenants visible to the API user, flattened."""
-    return list_result(await client.get("/v1/tenants"))["items"]
-
-
-async def all_tenant_ids(client: AuvikClient) -> str:
-    return ",".join(str(t["id"]) for t in await fetch_tenants(client) if t.get("id"))
-
-
 def _main_domain_prefix(tenants: list[dict]) -> str | None:
-    """Domain prefix of the top-level (multi-client) account."""
-    for tenant in tenants:
-        if str(tenant.get("tenantType", "")).lower() == "multiclient" and tenant.get("domainPrefix"):
+    """Domain prefix of the top-level (multi-client) account.
+
+    Multi-client tenants can be nested, so this is the one at the root of the tree:
+    no parent, or a parent outside the listed tenants.
+    """
+    ids = {str(t.get("id")) for t in tenants if t.get("id")}
+    multi = [
+        t
+        for t in tenants
+        if str(t.get("tenantType", "")).lower() == "multiclient" and t.get("domainPrefix")
+    ]
+    for tenant in multi:
+        parent = _parent_id(tenant)
+        if parent is None or parent not in ids:
             return tenant["domainPrefix"]
+    if multi:
+        return multi[0]["domainPrefix"]
     for tenant in tenants:
         if tenant.get("domainPrefix"):
             return tenant["domainPrefix"]
     return None
+
+
+def _parent_id(tenant: dict) -> str | None:
+    parent = tenant.get("parent", tenant.get("parentId"))
+    if isinstance(parent, dict):
+        parent = parent.get("id")
+    return str(parent) if parent not in (None, "") else None
 
 
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:

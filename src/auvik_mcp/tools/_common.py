@@ -14,6 +14,7 @@
 """Shared argument types and the error-handling wrapper used by every tool."""
 
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, get_args
@@ -33,6 +34,11 @@ ClientFactory = Callable[[], AuvikClient | None]
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
 MAX_PAGE_NUMBER = 20
+# Unscoped calls retry at most this often, each time without the tenants a 403 named.
+MAX_TENANT_RETRIES = 10
+_FORBIDDEN_TENANTS = re.compile(r"following tenant\(s\)\s*:\s*([0-9,\s]+)", re.IGNORECASE)
+# Sort names that match the filter names but not the record attribute.
+_SORT_ALIASES = {"detectedTime": "detectedOn"}
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=True)
 
@@ -47,7 +53,8 @@ Tenants = Annotated[
     Field(
         description=(
             "Comma-separated Auvik tenant IDs to scope results (from auvik_tenants_list). "
-            "Omit to cover all tenants the API user can access."
+            "Omit to cover every tenant the API user may read; client tenants it has no "
+            "permission on are skipped and listed in skipped_tenants."
         )
     ),
 ]
@@ -86,36 +93,125 @@ def page_params(page_size: int | None, page_after: str | None) -> dict[str, Any]
     return params
 
 
+async def fetch_tenants(client: AuvikClient) -> list[dict]:
+    """All tenants visible to the API user, flattened."""
+    return list_result(await client.get("/v1/tenants"))["items"]
+
+
+async def get_scoped(
+    client: AuvikClient, path: str, params: dict[str, Any], tenants_required: bool = False
+) -> tuple[Any, dict[str, Any], list[str]]:
+    """GET ``path`` and return ``(document, params used, skipped tenant IDs)``.
+
+    An explicit ``tenants`` is sent as given. Without one, Auvik scopes the call to
+    every tenant under the account and rejects it with 403 if the API user lacks
+    permission on any of them. The call is then repeated with the client tenants
+    from ``/v1/tenants``, dropping the ones the 403 names, so the caller still gets
+    the tenants it may read. ``tenants_required`` skips the unscoped first try.
+    """
+    if params.get("tenants"):
+        return await client.get(path, params), params, []
+    if not tenants_required:
+        try:
+            return await client.get(path, params), params, []
+        except AuvikError as e:
+            if not _forbidden_tenants(e):
+                raise
+    scope = await _client_tenant_ids(client)
+    skipped: list[str] = []
+    for _ in range(MAX_TENANT_RETRIES):
+        if not scope:
+            break
+        scoped = params | {"tenants": ",".join(scope)}
+        try:
+            return await client.get(path, scoped), scoped, skipped
+        except AuvikError as e:
+            forbidden = _forbidden_tenants(e) & set(scope)
+            if not forbidden:
+                raise
+            skipped += [t for t in scope if t in forbidden]
+            scope = [t for t in scope if t not in forbidden]
+    raise AuvikError(
+        403,
+        "The API user has no permission on the tenants it can list"
+        + (f" (skipped: {', '.join(skipped)})" if skipped else "")
+        + "; pass tenants with IDs it may read.",
+    )
+
+
+def with_skipped(result: dict[str, Any], skipped: list[str]) -> dict[str, Any]:
+    """Report tenants left out of an unscoped call, so nothing is silently missing."""
+    if not skipped:
+        return result
+    return result | {
+        "skipped_tenants": skipped,
+        "scope_note": (
+            "The API user has no permission on these client tenants, so their data is not "
+            "included. Pass tenants explicitly to choose the scope."
+        ),
+    }
+
+
+async def _client_tenant_ids(client: AuvikClient) -> list[str]:
+    """IDs of the client tenants the API user can list (all tenants if none is a client)."""
+    tenants = [t for t in await fetch_tenants(client) if t.get("id")]
+    clients = [t for t in tenants if str(t.get("tenantType", "")).lower() == "client"]
+    return [str(t["id"]) for t in clients or tenants]
+
+
+def _forbidden_tenants(error: AuvikError) -> set[str]:
+    """Tenant IDs named in Auvik's 403 "... on the following tenant(s): 1, 2" message."""
+    if error.status_code != 403:
+        return set()
+    match = _FORBIDDEN_TENANTS.search(error.message or "")
+    return set(re.findall(r"\d+", match.group(1))) if match else set()
+
+
 async def fetch_list(
     client: AuvikClient, path: str, params: dict[str, Any], page: int | None = None
 ) -> dict[str, Any]:
     """GET a collection and shape it; ``page`` N>1 follows the next cursor N-1 times."""
-    if page is None:
-        return list_result(await client.get(path, params))
-    if params.get("page[after]"):
-        raise ValueError("Pass either page or pageAfter, not both.")
-    page = int(page)
-    if page < 1 or page > MAX_PAGE_NUMBER:
-        raise ValueError(f"page must be between 1 and {MAX_PAGE_NUMBER}; use pageAfter to go further.")
-    for _ in range(page - 1):
-        cursor = next_cursor(await client.get(path, params))
+    if page is not None:
+        if params.get("page[after]"):
+            raise ValueError("Pass either page or pageAfter, not both.")
+        page = int(page)
+        if page < 1 or page > MAX_PAGE_NUMBER:
+            raise ValueError(f"page must be between 1 and {MAX_PAGE_NUMBER}; use pageAfter to go further.")
+    document, params, skipped = await get_scoped(client, path, params)
+    for _ in range((page or 1) - 1):
+        cursor = next_cursor(document)
         if cursor is None:
-            return {"items": [], "count": 0, "has_more": False, "next_cursor": None}
+            empty = {"items": [], "count": 0, "has_more": False, "next_cursor": None}
+            return with_skipped(empty, skipped)
         params = params | {"page[after]": cursor}
-    return list_result(await client.get(path, params))
+        document = await client.get(path, params)
+    return with_skipped(list_result(document), skipped)
 
 
 def sort_items(result: dict[str, Any], sort: str | None) -> dict[str, Any]:
     """Sort ``result["items"]`` locally by one attribute; leading "-" = descending.
 
-    Items lacking the attribute go last. An attribute no item has keeps API order.
+    Items lacking the attribute go last. An attribute no item has keeps API order
+    and says so in ``sort_note``.
     """
     field = (sort or "").strip()
     descending = field.startswith("-")
     field = field.lstrip("-+").strip()
     items = result.get("items") or []
-    if not field or not any(isinstance(i, dict) and i.get(field) is not None for i in items):
+    if not field:
         return result
+
+    def has(name: str) -> bool:
+        return any(isinstance(i, dict) and i.get(name) is not None for i in items)
+
+    if not has(field) and has(_SORT_ALIASES.get(field, field)):
+        field = _SORT_ALIASES[field]
+    if not has(field):
+        if not items:
+            return result
+        return result | {
+            "sort_note": f"No returned item has the attribute {field!r}, so the API order was kept."
+        }
     present = [i for i in items if isinstance(i, dict) and i.get(field) is not None]
     absent = [i for i in items if not (isinstance(i, dict) and i.get(field) is not None)]
     present.sort(key=lambda i: _sort_key(i[field]), reverse=descending)

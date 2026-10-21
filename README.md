@@ -36,7 +36,10 @@ an unknown region does not block the request, and tools return `invalid_argument
 All tools return a JSON string. List tools return `{items, count, has_more, next_cursor}`; pass
 `next_cursor` as `pageAfter` to get the next page. `pageSize` defaults to 50 (max 200). Most tools
 take an optional `tenants` (comma-separated tenant IDs from `auvik_tenants_list`); without it they
-cover every tenant the API user can access.
+cover every tenant the API user may read. If Auvik rejects the unscoped call with 403 because the
+API user has no permission on some tenants, the call is repeated with the client tenants from
+`auvik_tenants_list` minus the ones the 403 names; those are returned in `skipped_tenants` (with a
+`scope_note`), so nothing is left out silently.
 
 | Tool | Purpose | Parameters (required in **bold**) |
 |---|---|---|
@@ -74,7 +77,9 @@ Compatibility parameters (kept so existing callers keep working; the Auvik API h
   `page[after]` cursor N-1 times, then returned with its `next_cursor` as usual. Prefer
   `pageAfter`; passing both is an `invalid_argument` error, as is a page above 20.
 - `sort` on `auvik_alerts_list` sorts the returned page locally by one attribute
-  (`-detectedTime` = newest first); an unknown attribute keeps the API order.
+  (`-detectedOn` = newest first; `detectedTime` is accepted for `detectedOn`). It only orders the
+  returned page, so use `filter_detectedTimeAfter` for recent alerts. An attribute no returned
+  item has keeps the API order and is reported in `sort_note`.
 - `filter_entityId` on `auvik_entities_list_audits` filters the returned page locally on the
   record's device ID, so other pages may hold more matches.
 - `tenants (ignored)` on get-by-id tools is accepted and ignored: an ID is unique across tenants.

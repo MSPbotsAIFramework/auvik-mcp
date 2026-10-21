@@ -21,8 +21,19 @@ from pydantic import Field
 
 from .._jsonapi import list_result
 from ..api_client import AuvikClient
-from ._common import READ_ONLY, ClientFactory, PageAfter, PageSize, Tenants, enum_value, page_params, path_id, run_tool
-from .tenants import all_tenant_ids
+from ._common import (
+    READ_ONLY,
+    ClientFactory,
+    PageAfter,
+    PageSize,
+    Tenants,
+    enum_value,
+    get_scoped,
+    page_params,
+    path_id,
+    run_tool,
+    with_skipped,
+)
 
 Interval = Literal["minute", "hour", "day"]
 FromTime = Annotated[str, Field(description="Start of the window, ISO 8601, e.g. 2026-01-31T00:00:00.000Z.")]
@@ -80,7 +91,9 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[interval]": enum_value(interval, Interval),
                 "filter[deviceId]": filter_devices,
             }
-            return list_result(await client.get(f"/v1/stat/device/{path_id(enum_value(statId, DeviceStat))}", params))
+            path = f"/v1/stat/device/{path_id(enum_value(statId, DeviceStat))}"
+            document, _, skipped = await get_scoped(client, path, params)
+            return with_skipped(list_result(document), skipped)
 
         return await run_tool("auvik_statistics_device", client_factory, action)
 
@@ -111,7 +124,9 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[interfaceId]": filter_interfaces,
                 "filter[parentDevice]": filter_parentDevice,
             }
-            return list_result(await client.get(f"/v1/stat/interface/{path_id(enum_value(statId, InterfaceStat))}", params))
+            path = f"/v1/stat/interface/{path_id(enum_value(statId, InterfaceStat))}"
+            document, _, skipped = await get_scoped(client, path, params)
+            return with_skipped(list_result(document), skipped)
 
         return await run_tool("auvik_statistics_interface", client_factory, action)
 
@@ -141,7 +156,9 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[interval]": enum_value(interval, Interval),
                 "filter[serviceId]": filter_services,
             }
-            return list_result(await client.get(f"/v1/stat/service/{path_id(enum_value(statId, ServiceStat))}", params))
+            path = f"/v1/stat/service/{path_id(enum_value(statId, ServiceStat))}"
+            document, _, skipped = await get_scoped(client, path, params)
+            return with_skipped(list_result(document), skipped)
 
         return await run_tool("auvik_statistics_service", client_factory, action)
 
@@ -172,9 +189,8 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         """
 
         async def action(client: AuvikClient) -> dict:
-            scope = tenants or await all_tenant_ids(client)
             params = page_params(pageSize, pageAfter) | {
-                "tenants": scope,
+                "tenants": tenants,
                 "filter[fromTime]": fromTime or _iso(datetime.now(UTC) - timedelta(hours=24)),
                 "filter[thruTime]": _window(thruTime),
                 "filter[snmpPollerSettingId]": filter_pollers,
@@ -183,6 +199,8 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
             stat = enum_value(statId, PollerStat)
             if stat == "int":
                 params["filter[interval]"] = enum_value(interval, Interval) or "hour"
-            return list_result(await client.get(f"/v1/stat/snmppoller/{path_id(stat)}", params))
+            path = f"/v1/stat/snmppoller/{path_id(stat)}"
+            document, _, skipped = await get_scoped(client, path, params, tenants_required=True)
+            return with_skipped(list_result(document), skipped)
 
         return await run_tool("auvik_statistics_snmp_poller", client_factory, action)

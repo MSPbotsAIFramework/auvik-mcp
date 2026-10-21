@@ -391,3 +391,175 @@ async def test_network_type_normalized_or_passed_through(monkeypatch, given, sen
     seen = []
     await _call(monkeypatch, _recording(seen), "auvik_networks_list", {"filter_networkType": given, "tenants": "1"})
     assert seen[0].url.params["filter[networkType]"] == sent
+
+
+async def test_alerts_sort_detected_time_means_detected_on(monkeypatch):
+    page = {
+        "data": [
+            {"id": "old", "type": "alert", "attributes": {"detectedOn": "2024-10-21T08:55:00.000Z"}},
+            {"id": "new", "type": "alert", "attributes": {"detectedOn": "2024-11-06T23:40:00.000Z"}},
+        ]
+    }
+    for sort in ("-detectedTime", "-detectedOn"):
+        payload = await _call(monkeypatch, lambda r: httpx.Response(200, json=page), "auvik_alerts_list", {"sort": sort})
+        assert [i["id"] for i in payload["items"]] == ["new", "old"]
+        assert "sort_note" not in payload
+
+
+async def test_alerts_sort_on_missing_attribute_says_so(monkeypatch):
+    payload = await _call(
+        monkeypatch, lambda r: httpx.Response(200, json=ALERT_PAGE), "auvik_alerts_list", {"sort": "-noSuchField"}
+    )
+    assert [i["id"] for i in payload["items"]] == ["a1", "a2", "a3", "a4"]
+    assert "noSuchField" in payload["sort_note"]
+
+
+def _tenant(tid, kind, prefix, parent=None):
+    resource = {"id": tid, "type": "tenant", "attributes": {"domainPrefix": prefix, "tenantType": kind}}
+    if parent:
+        resource["relationships"] = {"parent": {"data": {"type": "tenant", "id": parent}}}
+    return resource
+
+
+# A child multi-client tenant listed before the top-level account, as on the QA account.
+NESTED_TENANTS = {
+    "data": [
+        _tenant("335303200792969350", "multiClient", "siteaudit", parent="320083058739380358"),
+        _tenant("320083058739380358", "multiClient", "interlinked"),
+        _tenant("961877997114140413", "client", "client-a", parent="320083058739380358"),
+        _tenant("1139453103368087293", "client", "client-b", parent="335303200792969350"),
+        _tenant("555", "client", "client-c", parent="320083058739380358"),
+    ]
+}
+
+
+async def test_tenants_detail_uses_root_of_nested_multi_client_tenants(monkeypatch):
+    seen = []
+
+    def handler(request):
+        seen.append(request.url)
+        if request.url.path == "/v1/tenants":
+            return httpx.Response(200, json=NESTED_TENANTS)
+        return httpx.Response(200, json={"data": {"id": "961877997114140413", "type": "tenantDetail"}})
+
+    await _call(monkeypatch, handler, "auvik_tenants_detail", {"tenantId": "961877997114140413"})
+    assert seen[-1].params["tenantDomainPrefix"] == "interlinked"
+
+
+def _forbidden(*ids):
+    detail = "You do not have permission to take this action on the following tenant(s): " + ", ".join(ids)
+    return httpx.Response(403, json={"errors": [{"status": "403", "title": "Forbidden", "detail": detail}]})
+
+
+def _restricted_api(seen, forbidden=("1139453103368087293",)):
+    """Unscoped calls and calls that include a forbidden tenant get Auvik's 403."""
+
+    def handler(request):
+        if request.url.path == "/v1/tenants":
+            return httpx.Response(200, json=NESTED_TENANTS)
+        params = dict(request.url.params)
+        seen.append(params)
+        scope = params.get("tenants")
+        if scope is None:
+            return _forbidden("1347469442280072957")  # a sub-tenant not in /v1/tenants
+        blocked = [t for t in scope.split(",") if t in forbidden]
+        if blocked:
+            return _forbidden(*blocked)
+        return httpx.Response(200, json=DEVICE_PAGE)
+
+    return handler
+
+
+@pytest.mark.parametrize(
+    "tool,args",
+    [
+        ("auvik_devices_list", {}),
+        ("auvik_alerts_list", {}),
+        ("auvik_billing_client_usage", {"fromDate": "2026-01-01", "thruDate": "2026-01-31"}),
+        ("auvik_statistics_device", {"statId": "bandwidth", "fromTime": "2026-01-01T00:00:00Z", "interval": "hour"}),
+    ],
+)
+async def test_unscoped_call_skips_tenants_the_api_user_may_not_read(monkeypatch, tool, args):
+    seen = []
+    payload = await _call(monkeypatch, _restricted_api(seen), tool, args)
+    assert [p.get("tenants") for p in seen] == [
+        None,
+        "961877997114140413,1139453103368087293,555",
+        "961877997114140413,555",
+    ]
+    assert payload["items"][0]["id"] == "dev-1"
+    assert payload["skipped_tenants"] == ["1139453103368087293"]
+    assert "scope_note" in payload
+
+
+async def test_unscoped_call_with_full_access_is_one_request(monkeypatch):
+    seen = []
+
+    def open_api(request):
+        seen.append(request.url.path)
+        return httpx.Response(200, json=DEVICE_PAGE)
+
+    payload = await _call(monkeypatch, open_api, "auvik_devices_list", {})
+    assert seen == ["/v1/inventory/device/info"]
+    assert "skipped_tenants" not in payload
+
+
+async def test_explicit_tenants_403_is_returned_unchanged(monkeypatch):
+    seen = []
+    payload = await _call(
+        monkeypatch, _restricted_api(seen), "auvik_devices_list", {"tenants": "1139453103368087293"}
+    )
+    assert len(seen) == 1
+    assert payload["error"]["code"] == "unauthorized"
+    assert "1139453103368087293" in payload["error"]["message"]
+
+
+async def test_other_403_is_not_retried(monkeypatch):
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        return httpx.Response(403, json={"errors": [{"detail": "API access is disabled"}]})
+
+    payload = await _call(monkeypatch, handler, "auvik_devices_list", {})
+    assert seen == ["/v1/inventory/device/info"]
+    assert payload["error"]["code"] == "unauthorized"
+
+
+async def test_no_readable_tenant_is_a_clear_error(monkeypatch):
+    seen = []
+    forbidden = ("961877997114140413", "1139453103368087293", "555")
+    payload = await _call(monkeypatch, _restricted_api(seen, forbidden=forbidden), "auvik_devices_list", {})
+    assert payload["error"]["code"] == "unauthorized"
+    assert "pass tenants" in payload["error"]["message"]
+
+
+async def test_snmp_poller_scopes_to_client_tenants_only(monkeypatch):
+    seen = []
+    payload = await _call(monkeypatch, _restricted_api(seen), "auvik_statistics_snmp_poller", {"statId": "string"})
+    assert [p.get("tenants") for p in seen] == ["961877997114140413,1139453103368087293,555", "961877997114140413,555"]
+    assert payload["skipped_tenants"] == ["1139453103368087293"]
+
+
+async def test_page_number_keeps_the_fallback_scope(monkeypatch):
+    seen = []
+    pages = _cursor_pages([])
+
+    def handler(request):
+        if request.url.path == "/v1/tenants":
+            return httpx.Response(200, json=NESTED_TENANTS)
+        params = dict(request.url.params)
+        seen.append(params)
+        if "1139453103368087293" in params.get("tenants", "1139453103368087293"):
+            return _forbidden("1139453103368087293")
+        return pages(request)
+
+    payload = await _call(monkeypatch, handler, "auvik_devices_list", {"page": 2})
+    assert [(p.get("tenants"), p.get("page[after]")) for p in seen] == [
+        (None, None),
+        ("961877997114140413,1139453103368087293,555", None),
+        ("961877997114140413,555", None),
+        ("961877997114140413,555", "C1"),
+    ]
+    assert payload["items"][0]["id"] == "item-2"
+    assert payload["skipped_tenants"] == ["1139453103368087293"]

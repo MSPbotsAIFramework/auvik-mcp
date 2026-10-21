@@ -29,10 +29,12 @@ from ._common import (
     PageAfter,
     PageSize,
     Tenants,
+    get_scoped,
     page_params,
     path_id,
     run_tool,
     sort_items,
+    with_skipped,
 )
 
 AlertId = Annotated[str, Field(description="Auvik alert ID (from auvik_alerts_list).")]
@@ -53,8 +55,10 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
             str | None,
             Field(
                 description=(
-                    "Attribute to order by, e.g. -detectedTime (leading - = descending). "
-                    "Sorts the returned page only; an unknown attribute keeps API order."
+                    "Attribute to order by, e.g. -detectedOn = newest first (leading - = descending; "
+                    "detectedTime is accepted for detectedOn). Sorts the returned page only, so "
+                    "use filter_detectedTimeAfter to get recent alerts; an attribute no item has "
+                    "keeps API order and is reported in sort_note."
                 )
             ),
         ] = None,
@@ -78,7 +82,8 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 "filter[dismissed]": filter_dismissed,
                 "filter[entityId]": filter_entityId,
             }
-            return sort_items(list_result(await client.get("/v1/alert/history/info", params)), sort)
+            document, _, skipped = await get_scoped(client, "/v1/alert/history/info", params)
+            return sort_items(with_skipped(list_result(document), skipped), sort)
 
         return await run_tool("auvik_alerts_list", client_factory, action)
 

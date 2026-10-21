@@ -20,7 +20,16 @@ from pydantic import Field
 
 from .._jsonapi import list_result
 from ..api_client import AuvikClient
-from ._common import READ_ONLY, ClientFactory, IgnoredTenants, Tenants, path_id, run_tool
+from ._common import (
+    READ_ONLY,
+    ClientFactory,
+    IgnoredTenants,
+    Tenants,
+    get_scoped,
+    path_id,
+    run_tool,
+    with_skipped,
+)
 
 FromDate = Annotated[str, Field(description="First day, YYYY-MM-DD.")]
 ThruDate = Annotated[str, Field(description="Last day, YYYY-MM-DD.")]
@@ -40,7 +49,8 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
 
         async def action(client: AuvikClient) -> dict:
             params = {"filter[fromDate]": fromDate, "filter[thruDate]": thruDate, "tenants": tenants}
-            return list_result(await client.get("/v1/billing/usage/client", params))
+            document, _, skipped = await get_scoped(client, "/v1/billing/usage/client", params)
+            return with_skipped(list_result(document), skipped)
 
         return await run_tool("auvik_billing_client_usage", client_factory, action)
 
