@@ -620,3 +620,62 @@ async def test_billing_client_usage_that_fits_is_unchanged(monkeypatch):
     )
     assert [i["id"] for i in payload["items"]] == ["root"]
     assert "remaining_tenants" not in payload and "truncated" not in payload
+
+
+# ---- PRD-21447: auvik_tenants_list pages locally ---------------------------------------------------------
+
+
+def _tenants_api(count, seen=None):
+    data = [
+        {
+            "id": f"{i:06d}",
+            "type": "tenants",
+            "attributes": {"domainPrefix": f"client-{i:03d}-" + "x" * 60, "tenantType": "client"},
+            "relationships": {"parent": {"data": {"id": "000000", "type": "tenants"}}},
+        }
+        for i in range(count)
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(request)
+        return httpx.Response(200, json={"data": data})
+
+    return handler
+
+
+async def test_tenants_list_walk_by_next_offset_reaches_every_tenant(monkeypatch):
+    seen_ids, offset, calls, cut = [], None, 0, 0
+    while True:
+        args = {} if offset is None else {"offset": offset}
+        out = await _call(monkeypatch, _tenants_api(400), "auvik_tenants_list", args)
+        calls += 1
+        cut += bool(out.get("truncated"))
+        assert "retry_page_size" not in out and len(json.dumps(out, separators=(",", ":"))) <= 20_000
+        seen_ids += [t["id"] for t in out["items"]]
+        offset = out.get("next_offset")
+        if offset is None:
+            assert out["has_more"] is False
+            break
+        assert out["has_more"] is True and calls < 50
+    assert seen_ids == [f"{i:06d}" for i in range(400)] and cut > 0
+
+
+async def test_tenants_list_small_account_is_unchanged(monkeypatch):
+    out = await _call(monkeypatch, _tenants_api(3), "auvik_tenants_list", {})
+    assert [t["id"] for t in out["items"]] == ["000000", "000001", "000002"]
+    assert (out["count"], out["total"], out["has_more"]) == (3, 3, False) and "next_offset" not in out
+
+
+@pytest.mark.parametrize(("offset", "limit", "ids", "next_offset"), [(0, 2, [0, 1], 2), (3, 5, [3, 4], None), (9, None, [], None)])
+async def test_tenants_list_offset_and_limit(monkeypatch, offset, limit, ids, next_offset):
+    args = {"offset": offset} | ({} if limit is None else {"limit": limit})
+    out = await _call(monkeypatch, _tenants_api(5), "auvik_tenants_list", args)
+    assert [t["id"] for t in out["items"]] == [f"{i:06d}" for i in ids]
+    assert out.get("next_offset") == next_offset and out["has_more"] is (next_offset is not None)
+
+
+async def test_tenants_list_fetches_auvik_once_per_call(monkeypatch):
+    seen = []
+    await _call(monkeypatch, _tenants_api(5, seen), "auvik_tenants_list", {"offset": 2, "limit": 2})
+    assert [r.url.path for r in seen] == ["/v1/tenants"]

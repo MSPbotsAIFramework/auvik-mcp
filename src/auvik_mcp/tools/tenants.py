@@ -58,16 +58,31 @@ def _parent_id(tenant: dict) -> str | None:
 
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
-    async def auvik_tenants_list() -> str:
+    async def auvik_tenants_list(
+        offset: Annotated[
+            int | None, Field(description="Tenant position to start from (0-based); pass next_offset.", ge=0)
+        ] = None,
+        limit: Annotated[int | None, Field(description="Tenants to return (default: all that fit).", ge=1)] = None,
+    ) -> str:
         """List the tenants the API user can access: the MSP account and its client tenants.
 
         Returns each tenant's id, domainPrefix and tenantType. Use the id as the
-        `tenants` argument of other tools to scope them to one client.
+        `tenants` argument of other tools to scope them to one client. Large accounts are
+        cut to fit the response size: continue with offset=next_offset until has_more is false.
         """
 
         async def action(client: AuvikClient) -> dict:
-            items = await fetch_tenants(client)
-            return {"items": items, "count": len(items)}
+            # Auvik returns every tenant at once, so the list is paged here.
+            tenants = await fetch_tenants(client)
+            start = offset or 0
+            items = tenants[start:] if limit is None else tenants[start : start + limit]
+            end = start + len(items)
+            result: dict = {"items": items, "count": len(items), "total": len(tenants), "offset": start}
+            result["has_more"] = end < len(tenants)
+            if result["has_more"]:
+                result["next_offset"] = end
+            result["_resume"] = {"key": "next_offset", "start": start}
+            return result
 
         return await run_tool("auvik_tenants_list", client_factory, action)
 
